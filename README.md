@@ -104,6 +104,23 @@ All via environment variables, read once at startup:
   fault with a linear scan, and writes the report with raw `write(2)` — no heap,
   no locks. Symbolization is the one async-unsafe step and is strictly opt-in.
 
+## Where Coffin fits
+
+Memory-debugging tools for Rust occupy different points in the trade-off space:
+
+| Tool                  | Approach                              | What it needs              | Best at                                      |
+|-----------------------|---------------------------------------|----------------------------|----------------------------------------------|
+| **AddressSanitizer**  | Compile-time instrumentation          | Nightly + rebuild the world | Broad, fast coverage (heap/stack/globals)    |
+| **Miri**              | Interpreter / semantic analysis       | Nightly, runs ~100x slower  | UB & aliasing violations the hardware can't see |
+| **Valgrind**          | Dynamic binary translation            | External tool, heavy        | Language-agnostic runtime checks             |
+| **Coffin**            | **Drop-in allocator, runtime-only**   | **Stable Rust, swap the allocator** | **Exact-byte heap overflow / UAF in canary/CI** |
+
+The niche Coffin fills: **memory-corruption debugging as ordinary runtime
+behavior of your program** — no special toolchain, no rebuild of dependencies,
+no interpreter. You swap the global allocator and the bug crashes itself, at the
+exact byte, with a report. It is the narrowest of these tools, and the easiest to
+reach for.
+
 ## Why not AddressSanitizer?
 
 You probably should use [AddressSanitizer](https://github.com/google/sanitizers/wiki/addresssanitizer)
