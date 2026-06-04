@@ -14,6 +14,9 @@ use std::ptr;
 static ALLOC: coffin::Coffin = coffin::Coffin::new();
 
 fn main() {
+    // Re-assert Coffin's handler after std's startup (see `arm` docs).
+    coffin::arm();
+
     let layout = Layout::from_size_align(64, 8).unwrap();
 
     unsafe {

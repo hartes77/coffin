@@ -13,6 +13,9 @@ use std::ptr;
 static ALLOC: coffin::Coffin = coffin::Coffin::new();
 
 fn main() {
+    // Re-assert Coffin's handler after std's startup (see `arm` docs).
+    coffin::arm();
+
     const N: usize = 64;
 
     // A Vec<u8> of exactly N bytes (align 1, size N ⇒ size % align == 0 ⇒

@@ -89,10 +89,13 @@ pub(crate) fn force_guard() {
 
 /// Eagerly initialize the registry and (re)arm the SIGSEGV/SIGBUS handler.
 ///
-/// Coffin arms itself on the first allocation, but on macOS std's runtime may
-/// install its own SIGSEGV stack-overflow guard during startup and clobber our
-/// disposition. Calling `arm()` at the very top of `main` re-asserts Coffin's
-/// handler so wild-pointer SIGSEGVs are caught too. Always safe to call.
+/// **Recommended as the first line of `main`.** Coffin arms itself on the first
+/// allocation, but the std runtime installs its *own* SIGSEGV handler (the
+/// stack-overflow guard) during startup. If Coffin's first allocation happens
+/// before that — which it does on Linux — std's handler is installed last and
+/// shadows Coffin's, so overflow/use-after-free faults (delivered as SIGSEGV on
+/// Linux) would die uncaught. `arm()` re-asserts Coffin's disposition after std,
+/// guaranteeing it wins on every platform. Idempotent and always safe to call.
 pub fn arm() {
     registry::registry();
     handler::install();

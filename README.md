@@ -32,8 +32,9 @@ On the fault, Coffin prints what happened, where the memory was allocated, and
 static ALLOC: coffin::Coffin = coffin::Coffin::new();
 
 fn main() {
-    // Optional but recommended on macOS: re-assert the handler from main so
-    // wild-pointer SIGSEGVs are caught even if std armed its own first.
+    // Recommended as the first line of main: std installs its own SIGSEGV
+    // handler at startup, and arm() re-asserts Coffin's so it wins on every
+    // platform (without this, overflow/UAF can die uncaught on Linux).
     coffin::arm();
 
     let v = vec![0u8; 64];
