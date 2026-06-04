@@ -1,5 +1,10 @@
 # ⚰️ Coffin
 
+[![CI](https://github.com/hartes77/coffin/actions/workflows/ci.yml/badge.svg)](https://github.com/hartes77/coffin/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/coffin.svg)](https://crates.io/crates/coffin)
+[![docs.rs](https://img.shields.io/docsrs/coffin)](https://docs.rs/coffin)
+[![license](https://img.shields.io/crates/l/coffin.svg)](#license)
+
 **A page-fencing global allocator for Rust that turns silent memory corruption
 into a deterministic crash with a post-mortem.**
 
