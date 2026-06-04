@@ -1,0 +1,53 @@
+name: Coffin demo
+
+# A self-test / showcase, NOT a template to copy verbatim.
+#
+# It runs each crashing example under Coffin's CI integration mode and asserts
+# that Coffin *catches* the bug (exits with the chosen code) and emits a GitHub
+# `::error` annotation. The job is GREEN when Coffin behaves as intended — so the
+# repo's own CI stays healthy while still demonstrating the feature live. You'll
+# see the emitted annotations attached to the run.
+#
+# In a REAL project you do the opposite: you let Coffin's non-zero exit FAIL the
+# job, so a memory bug blocks the PR. See the README section "Using Coffin in CI".
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  catches-the-bug:
+    name: Coffin catches '${{ matrix.example }}'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example: [overflow, uaf, wild]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run '${{ matrix.example }}' under Coffin
+        env:
+          COFFIN_ON_FAULT: "exit:99"     # CI-friendly: a stable code, not a signal
+          COFFIN_GITHUB_ANNOTATE: "1"    # emit ::error annotations on the run
+          COFFIN_SYMBOLIZE: "1"          # demangled names + file:line in the report
+        run: |
+          set +e
+          cargo run --quiet --example "${{ matrix.example }}"
+          code=$?
+          echo "::notice::'${{ matrix.example }}' exited with code $code"
+          if [ "$code" -eq 99 ]; then
+            echo "Coffin caught the corruption (exit 99) as expected."
+            exit 0
+          else
+            echo "Expected Coffin to catch the corruption (exit 99), but got $code."
+            exit 1
+          fi

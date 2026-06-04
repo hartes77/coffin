@@ -94,14 +94,33 @@ All via environment variables, read once at startup:
 Coffin is a **deterministic failure signal**, not just a debugger: drop it into
 a test/canary build and a memory bug fails the pipeline, on the exact line.
 
+A complete workflow in your project:
+
 ```yaml
-# Run your test binary under Coffin; fail the job (exit 1) on corruption,
-# and annotate the offending source lines on the PR.
-- run: cargo run --example uaf   # or your instrumented test binary
-  env:
-    COFFIN_ON_FAULT: "exit:1"
-    COFFIN_GITHUB_ANNOTATE: "1"
+name: memory check
+on: [push, pull_request]
+
+jobs:
+  coffin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Run your test binary (built with Coffin as #[global_allocator]).
+      # A memory bug makes Coffin exit non-zero -> the job fails -> PR is blocked,
+      # with the offending source line annotated inline.
+      - run: cargo run --release --bin my_test_harness
+        env:
+          COFFIN_ON_FAULT: "exit:1"
+          COFFIN_GITHUB_ANNOTATE: "1"
+          COFFIN_SYMBOLIZE: "1"
 ```
+
+> A live, working version runs in this repo:
+> [`.github/workflows/coffin-demo.yml`](.github/workflows/coffin-demo.yml). It is
+> a *self-test* (it asserts Coffin catches the bug, so it stays green) — the
+> opposite of the failure-blocking pattern above, which is what you want in your
+> own project.
 
 - **`COFFIN_ON_FAULT=exit:<N>`** — instead of dying by signal (which is awkward
   for CI runners), Coffin exits with a stable, machine-readable code. There is
