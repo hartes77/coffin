@@ -2,6 +2,7 @@
 name = "coffin"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.82"
 description = "A page-fencing global allocator that turns memory corruption into a deterministic SIGSEGV at the exact faulting address."
 license = "MIT OR Apache-2.0"
 readme = "README.md"

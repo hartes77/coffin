@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/hartes77/coffin/actions/workflows/ci.yml/badge.svg)](https://github.com/hartes77/coffin/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/coffin.svg)](https://crates.io/crates/coffin)
+[![MSRV](https://img.shields.io/badge/MSRV-1.82-blue)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
 [![docs.rs](https://docs.rs/coffin/badge.svg)](https://docs.rs/coffin)
 [![license](https://img.shields.io/crates/l/coffin.svg)](#license)
 
