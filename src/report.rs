@@ -8,15 +8,16 @@ use std::os::raw::c_void;
 
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
-/// A `core::fmt::Write` sink that streams straight to stderr via `write(2)`,
-/// without allocating. Lets us print `Display` types (e.g. backtrace's
-/// demangling `SymbolName`) in the signal handler without building a `String`.
-pub struct StderrFmt;
+/// A `core::fmt::Write` sink that streams straight to a file descriptor via
+/// `write(2)`, without allocating. Lets us print `Display` types (e.g.
+/// backtrace's demangling `SymbolName`, or formatted annotation lines) in the
+/// signal handler without building a `String`.
+pub struct FdWriter(pub i32);
 
-impl core::fmt::Write for StderrFmt {
+impl core::fmt::Write for FdWriter {
     #[inline]
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        raw_write(&[s.as_bytes()]);
+        raw_write_fd(self.0, &[s.as_bytes()]);
         Ok(())
     }
 }
@@ -64,21 +65,22 @@ pub fn write_dec(mut v: usize) {
     raw_write(&[&buf[i..]]);
 }
 
-/// Write a sequence of byte slices to `STDERR_FILENO`. No heap, no formatting,
-/// no locks — just raw `write(2)` calls.
+/// Write a sequence of byte slices to `STDERR_FILENO` (the human report).
 #[inline]
 pub fn raw_write(parts: &[&[u8]]) {
+    raw_write_fd(libc::STDERR_FILENO, parts);
+}
+
+/// Write a sequence of byte slices to an arbitrary fd. No heap, no formatting,
+/// no locks — just raw `write(2)` calls. Stdout (fd 1) is used for GitHub
+/// Actions annotations; stderr (fd 2) for the human report.
+#[inline]
+pub fn raw_write_fd(fd: i32, parts: &[&[u8]]) {
     for p in parts {
         let mut off = 0usize;
         while off < p.len() {
-            // SAFETY: writing a valid slice range to fd 2.
-            let n = unsafe {
-                libc::write(
-                    libc::STDERR_FILENO,
-                    p.as_ptr().add(off) as *const c_void,
-                    p.len() - off,
-                )
-            };
+            // SAFETY: writing a valid slice range to the given fd.
+            let n = unsafe { libc::write(fd, p.as_ptr().add(off) as *const c_void, p.len() - off) };
             if n <= 0 {
                 break; // EINTR/EAGAIN/closed — don't risk spinning in fragile contexts.
             }

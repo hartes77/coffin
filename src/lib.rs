@@ -23,23 +23,20 @@
 //!
 //! ## Tuning (environment)
 //!
-//! | Var                | Meaning                                  | Default     |
-//! |--------------------|------------------------------------------|-------------|
-//! | `COFFIN_PROTECT`   | `above` (overflow) / `below` (underflow) | `above`     |
-//! | `COFFIN_MAX_LIVE`  | registry slots (→ next power of two)      | `1048576`   |
-//! | `COFFIN_QUARANTINE`| freed regions kept dead before recycling  | `4096`      |
+//! | Var                     | Meaning                                       | Default   |
+//! |-------------------------|-----------------------------------------------|-----------|
+//! | `COFFIN_PROTECT`        | `above` (overflow) / `below` (underflow)      | `above`   |
+//! | `COFFIN_MAX_LIVE`       | registry slots (→ next power of two)          | `1048576` |
+//! | `COFFIN_QUARANTINE`     | freed regions kept dead before recycling      | `4096`    |
+//! | `COFFIN_SYMBOLIZE`      | `1` to demangle/resolve the captured stacks   | off       |
+//! | `COFFIN_ON_FAULT`       | `abort` / `exit:<N>` termination policy       | `abort`   |
+//! | `COFFIN_GITHUB_ANNOTATE`| `1` to emit GitHub Actions `::error` lines    | off       |
 //!
 //! ## Cost
 //!
 //! At least one page per allocation (16 KiB on Apple Silicon). This is a
 //! debugging tool for canary/CI, **not** an always-on production hot-path
 //! allocator.
-//!
-//! ## Phase 2 scope
-//!
-//! Registry + quarantine. `dealloc` now seals freed memory `PROT_NONE` instead
-//! of unmapping it, so use-after-free faults. The SIGSEGV handler and the pretty
-//! report (which call site allocated / freed it) arrive in Phase 3.
 
 mod config;
 mod handler;

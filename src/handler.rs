@@ -14,7 +14,8 @@
 //!   and with the reentrancy guard forced on so any allocation it does is
 //!   served by the system allocator (never re-entering Coffin's spinlock).
 
-use crate::registry::{self, FaultKind};
+use crate::config::OnFault;
+use crate::registry::{self, FaultInfo, FaultKind};
 use crate::report::{write_dec as dec, write_hex as hex, write_str as put};
 use std::os::raw::{c_int, c_void};
 use std::sync::Once;
@@ -88,23 +89,36 @@ extern "C" fn handle(sig: c_int, info: *mut libc::siginfo_t, _ctx: *mut c_void) 
     let addr = unsafe { fault_addr(info) };
     report(sig, addr);
 
-    // Terminate with the *original* signal and dump core. Re-`raise`ing here is
-    // useless — the signal is blocked while its own handler runs. The classic
-    // idiom is to restore the default disposition and simply RETURN: the
-    // faulting instruction re-executes, faults again, and now `SIG_DFL` kills
-    // the process with the true signal (SIGSEGV/SIGBUS) and a core dump.
-    unsafe {
-        libc::signal(libc::SIGSEGV, libc::SIG_DFL);
-        libc::signal(libc::SIGBUS, libc::SIG_DFL);
+    // Termination policy (COFFIN_ON_FAULT). There is no "continue": a guard-page
+    // fault cannot be resumed (the memory genuinely isn't there), so this only
+    // chooses *how* to die.
+    match crate::config::on_fault() {
+        OnFault::Exit(code) => {
+            // Clean, stable exit code for CI — no core dump.
+            unsafe { libc::_exit(code) };
+        }
+        OnFault::AbortWithSignal => {
+            // Terminate with the *original* signal and dump core. Re-`raise`ing
+            // here is useless — the signal is blocked while its own handler
+            // runs. The classic idiom is to restore the default disposition and
+            // simply RETURN: the faulting instruction re-executes, faults again,
+            // and now `SIG_DFL` kills the process with the true signal and core.
+            unsafe {
+                libc::signal(libc::SIGSEGV, libc::SIG_DFL);
+                libc::signal(libc::SIGBUS, libc::SIG_DFL);
+            }
+        }
     }
 }
 
 fn report(sig: c_int, addr: usize) {
     let symbolize = crate::config::symbolize();
+    let annotate = crate::config::annotate();
     // Force the reentrancy guard on for the rest of the handler: if
-    // symbolization allocates, it is routed to the system allocator instead of
-    // re-entering Coffin (and its spinlock).
-    if symbolize {
+    // symbolization (or annotation, which needs file:line) allocates, it is
+    // routed to the system allocator instead of re-entering Coffin (and its
+    // spinlock).
+    if symbolize || annotate {
         crate::force_guard();
     }
 
@@ -132,7 +146,7 @@ fn report(sig: c_int, addr: usize) {
         _ => put(b"WILD POINTER (no tracked region)\n"),
     }
 
-    match info {
+    match &info {
         Some(fi) if fi.kind != FaultKind::Wild => {
             put(b"  region        : base ");
             hex(fi.base);
@@ -188,6 +202,12 @@ fn report(sig: c_int, addr: usize) {
         put(b"  hint          : set COFFIN_SYMBOLIZE=1 for symbol names + file:line\n");
     }
     put(b"==========================================================\n");
+
+    // CI integration layer: emit machine-readable GitHub annotations on stdout,
+    // anchored to the alloc (and free) call sites in the user's source.
+    if annotate {
+        emit_annotations(info.as_ref(), addr);
+    }
 }
 
 /// Print one captured stack: raw IPs always, plus best-effort symbols if asked.
@@ -227,7 +247,7 @@ fn symbolize_ip(ip: usize) {
             use core::fmt::Write;
             put(b"        ");
             // `SymbolName`'s Display demangles; stream it to stderr (no heap).
-            let _ = write!(crate::report::StderrFmt, "{name}");
+            let _ = write!(crate::report::FdWriter(libc::STDERR_FILENO), "{name}");
             put(b"\n");
         }
         if let (Some(file), Some(line)) = (sym.filename(), sym.lineno()) {
@@ -240,4 +260,116 @@ fn symbolize_ip(ip: usize) {
             }
         }
     });
+}
+
+// ───────────────────────── GitHub Actions annotations ─────────────────────────
+// `::error file=<f>,line=<n>,title=<t>::<message>` on stdout becomes a red inline
+// comment on the PR. We anchor it to the user's alloc/free call site.
+
+fn kind_label(kind: FaultKind) -> &'static str {
+    match kind {
+        FaultKind::Overflow => "BUFFER OVERFLOW",
+        FaultKind::Underflow => "BUFFER UNDERFLOW",
+        FaultKind::UseAfterFree => "USE-AFTER-FREE",
+        FaultKind::LiveRegion => "FAULT IN LIVE REGION",
+        FaultKind::Wild => "WILD POINTER",
+    }
+}
+
+/// Emit GitHub annotations on stdout. Anchors to the alloc site (and, for
+/// use-after-free, the free site); falls back to a location-less annotation
+/// carrying the fault address.
+fn emit_annotations(info: Option<&FaultInfo>, addr: usize) {
+    use core::fmt::Write;
+
+    // current_dir allocates, but the guard is forced in annotate mode, so it is
+    // served by the system allocator.
+    let cwd = std::env::current_dir().ok();
+    let cwd = cwd.as_deref().and_then(|p| p.to_str());
+
+    let mut located = false;
+    if let (Some(fi), Some(arena)) = (info, registry::try_get()) {
+        if fi.kind != FaultKind::Wild {
+            let label = kind_label(fi.kind);
+            located |= emit_site(arena, fi.slot, false, cwd, label, "allocated", addr);
+            if fi.kind == FaultKind::UseAfterFree {
+                located |= emit_site(arena, fi.slot, true, cwd, label, "freed", addr);
+            }
+        }
+    }
+
+    if !located {
+        let label = info.map(|i| kind_label(i.kind)).unwrap_or("WILD POINTER");
+        let mut w = crate::report::FdWriter(libc::STDOUT_FILENO);
+        let _ = writeln!(
+            w,
+            "::error title=Coffin::{label} at {addr:#x} (no source location)"
+        );
+    }
+}
+
+/// Find the first user-code frame in a captured stack and emit one annotation.
+/// Returns true if a located annotation was emitted.
+fn emit_site(
+    arena: &registry::Arena,
+    slot: usize,
+    free: bool,
+    cwd: Option<&str>,
+    label: &str,
+    site: &str,
+    addr: usize,
+) -> bool {
+    use core::fmt::Write;
+
+    let ips = arena.read_ips(slot, free);
+    let emitted = std::cell::Cell::new(false);
+    for &ip in ips.iter() {
+        if ip == 0 || emitted.get() {
+            continue;
+        }
+        backtrace::resolve(ip as *mut c_void, |sym| {
+            if emitted.get() {
+                return;
+            }
+            let (file, line) = match (sym.filename().and_then(|p| p.to_str()), sym.lineno()) {
+                (Some(f), Some(l)) => (f, l),
+                _ => return,
+            };
+            if is_internal_frame(file, sym) {
+                return;
+            }
+            let rel = relativize(file, cwd);
+            let mut w = crate::report::FdWriter(libc::STDOUT_FILENO);
+            let _ = writeln!(
+                w,
+                "::error file={rel},line={line},title=Coffin::{label}: buffer {site} here, fault at {addr:#x}"
+            );
+            emitted.set(true);
+        });
+    }
+    emitted.get()
+}
+
+/// Heuristic: Coffin's own plumbing, the std library, the allocator shim, or a
+/// registry dependency — i.e. *not* the user's code.
+fn is_internal_frame(path: &str, sym: &backtrace::Symbol) -> bool {
+    if path.contains("/rustc/") || path.contains("/.cargo/") || path.contains("/registry/") {
+        return true;
+    }
+    if let Some(name) = sym.name().and_then(|n| n.as_str()) {
+        if name.contains("coffin") || name.contains("backtrace") || name.contains("__rust") {
+            return true;
+        }
+    }
+    false
+}
+
+/// Make `path` relative to `cwd` (GitHub annotations want repo-relative paths).
+fn relativize<'a>(path: &'a str, cwd: Option<&str>) -> &'a str {
+    if let Some(c) = cwd {
+        if let Some(rest) = path.strip_prefix(c) {
+            return rest.trim_start_matches('/');
+        }
+    }
+    path
 }

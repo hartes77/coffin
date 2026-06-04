@@ -24,6 +24,23 @@ static MODE: OnceLock<Mode> = OnceLock::new();
 static MAX_LIVE: OnceLock<usize> = OnceLock::new();
 static QUARANTINE: OnceLock<usize> = OnceLock::new();
 static SYMBOLIZE: OnceLock<bool> = OnceLock::new();
+static ON_FAULT: OnceLock<OnFault> = OnceLock::new();
+static ANNOTATE: OnceLock<bool> = OnceLock::new();
+
+/// What Coffin does to the process *after* it has printed the fault report.
+///
+/// This is termination *policy*, not recovery: a guard-page fault leaves the
+/// heap in an irreversibly inconsistent state, so there is no safe way to
+/// "continue" — the choice is only *how* to die.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OnFault {
+    /// Restore the default disposition and let the original signal terminate
+    /// the process, dumping core. Best for local debugging. Default.
+    AbortWithSignal,
+    /// Call `_exit(code)` immediately — a stable, machine-readable signal for
+    /// CI (no core dump). Selected via `COFFIN_ON_FAULT=exit:<N>`.
+    Exit(i32),
+}
 
 /// Default number of registry slots (rounded up to a power of two for masking).
 const DEFAULT_MAX_LIVE: usize = 1 << 20; // 1_048_576
@@ -125,6 +142,58 @@ pub fn quarantine_cap() -> usize {
 pub fn symbolize() -> bool {
     *SYMBOLIZE.get_or_init(|| {
         const KEY: &[u8] = b"COFFIN_SYMBOLIZE\0";
+        // SAFETY: NUL-terminated key; getenv does not allocate.
+        let val = unsafe { libc::getenv(KEY.as_ptr() as *const c_char) };
+        if val.is_null() {
+            return false;
+        }
+        // SAFETY: getenv returned a valid C string.
+        matches!(
+            unsafe { CStr::from_ptr(val) }.to_bytes(),
+            b"1" | b"true" | b"yes"
+        )
+    })
+}
+
+/// Termination policy after a fault report. From `COFFIN_ON_FAULT`:
+/// `abort` (default, core dump) or `exit:<N>` (clean exit code for CI).
+#[inline]
+pub fn on_fault() -> OnFault {
+    *ON_FAULT.get_or_init(|| {
+        const KEY: &[u8] = b"COFFIN_ON_FAULT\0";
+        // SAFETY: NUL-terminated key; getenv does not allocate.
+        let val = unsafe { libc::getenv(KEY.as_ptr() as *const c_char) };
+        if val.is_null() {
+            return OnFault::AbortWithSignal;
+        }
+        // SAFETY: getenv returned a valid C string.
+        let bytes = unsafe { CStr::from_ptr(val) }.to_bytes();
+        if let Some(rest) = bytes.strip_prefix(b"exit:") {
+            let mut n: i32 = 0;
+            let mut seen = false;
+            for &b in rest {
+                if b.is_ascii_digit() {
+                    seen = true;
+                    n = n.saturating_mul(10).saturating_add((b - b'0') as i32);
+                } else {
+                    break;
+                }
+            }
+            if seen {
+                return OnFault::Exit(n);
+            }
+        }
+        OnFault::AbortWithSignal // "abort" or anything unrecognized
+    })
+}
+
+/// Whether to emit GitHub Actions `::error` workflow annotations (in addition
+/// to the human report). From `COFFIN_GITHUB_ANNOTATE`. Implies symbolization,
+/// since annotations need `file:line`.
+#[inline]
+pub fn annotate() -> bool {
+    *ANNOTATE.get_or_init(|| {
+        const KEY: &[u8] = b"COFFIN_GITHUB_ANNOTATE\0";
         // SAFETY: NUL-terminated key; getenv does not allocate.
         let val = unsafe { libc::getenv(KEY.as_ptr() as *const c_char) };
         if val.is_null() {

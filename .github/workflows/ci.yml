@@ -38,3 +38,25 @@ jobs:
 
       - name: Test
         run: cargo test --all-targets
+
+  # Catches dependency-driven MSRV drift ("yesterday it built, today it doesn't,
+  # and we didn't change any code"). Pins the declared rust-version and just
+  # checks that the whole tree still compiles there.
+  msrv:
+    name: MSRV (1.82)
+    runs-on: ubuntu-latest
+    # Don't deny warnings here: an older compiler may lint differently — we only
+    # care whether the dependency tree still builds on the declared minimum.
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.82.0
+        uses: dtolnay/rust-toolchain@1.82.0
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check on MSRV
+        run: cargo check --all-targets

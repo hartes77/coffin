@@ -80,12 +80,36 @@ without it you still get the raw instruction pointers.)
 
 All via environment variables, read once at startup:
 
-| Variable            | Meaning                                                        | Default     |
-|---------------------|----------------------------------------------------------------|-------------|
-| `COFFIN_PROTECT`    | `above` (catch overflows) or `below` (catch underflows)        | `above`     |
-| `COFFIN_MAX_LIVE`   | Registry slots, rounded up to a power of two (max tracked live) | `1048576`   |
-| `COFFIN_QUARANTINE` | Freed regions kept sealed before their address is recycled     | `4096`      |
-| `COFFIN_SYMBOLIZE`  | `1` to demangle/resolve the captured stacks in the report      | off         |
+| Variable                | Meaning                                                        | Default     |
+|-------------------------|----------------------------------------------------------------|-------------|
+| `COFFIN_PROTECT`        | `above` (catch overflows) or `below` (catch underflows)        | `above`     |
+| `COFFIN_MAX_LIVE`       | Registry slots, rounded up to a power of two (max tracked live) | `1048576`   |
+| `COFFIN_QUARANTINE`     | Freed regions kept sealed before their address is recycled     | `4096`      |
+| `COFFIN_SYMBOLIZE`      | `1` to demangle/resolve the captured stacks in the report      | off         |
+| `COFFIN_ON_FAULT`       | `abort` (core dump) or `exit:<N>` (clean exit code for CI)      | `abort`     |
+| `COFFIN_GITHUB_ANNOTATE`| `1` to emit GitHub Actions `::error` annotations on stdout      | off         |
+
+## Using Coffin in CI
+
+Coffin is a **deterministic failure signal**, not just a debugger: drop it into
+a test/canary build and a memory bug fails the pipeline, on the exact line.
+
+```yaml
+# Run your test binary under Coffin; fail the job (exit 1) on corruption,
+# and annotate the offending source lines on the PR.
+- run: cargo run --example uaf   # or your instrumented test binary
+  env:
+    COFFIN_ON_FAULT: "exit:1"
+    COFFIN_GITHUB_ANNOTATE: "1"
+```
+
+- **`COFFIN_ON_FAULT=exit:<N>`** — instead of dying by signal (which is awkward
+  for CI runners), Coffin exits with a stable, machine-readable code. There is
+  intentionally no "continue" mode: a guard-page fault cannot be resumed, so the
+  only choice is *how* to terminate, not *whether*.
+- **`COFFIN_GITHUB_ANNOTATE=1`** — emits `::error file=…,line=…::…` workflow
+  commands, so the alloc (and, for use-after-free, free) site shows up as a red
+  inline comment on the pull request. Implies symbolization.
 
 ## How it works
 
