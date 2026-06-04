@@ -68,11 +68,20 @@ fn main() {
 
     let evicted = coffin::eviction_count() - evictions_before;
     println!("    freed {rounds} regions");
-    println!("    quarantine_len = {} (must stay <= {qcap})", coffin::quarantine_len());
+    println!(
+        "    quarantine_len = {} (must stay <= {qcap})",
+        coffin::quarantine_len()
+    );
     println!("    evictions (oldest munmap'd) = {evicted}");
     assert!(evicted > 0, "expected evictions once quarantine filled");
-    assert!(evicted >= rounds - qcap, "every free past the cap should evict one");
-    assert!(coffin::quarantine_len() <= qcap, "quarantine must stay bounded");
+    assert!(
+        evicted >= rounds - qcap,
+        "every free past the cap should evict one"
+    );
+    assert!(
+        coffin::quarantine_len() <= qcap,
+        "quarantine must stay bounded"
+    );
     println!("    -> VA reclaimed past the window; no unbounded VMA growth [ok]");
 
     println!("inspect: all checks passed");

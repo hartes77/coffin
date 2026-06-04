@@ -38,10 +38,10 @@ pub fn write_hex(v: usize) {
         buf[2] = b'0';
         n = 3;
     } else {
-        let nibbles = ((usize::BITS - v.leading_zeros()) as usize + 3) / 4;
+        let nibbles = ((usize::BITS - v.leading_zeros()) as usize).div_ceil(4);
         for i in 0..nibbles {
             let shift = (nibbles - 1 - i) * 4;
-            buf[2 + i] = HEX[((v >> shift) & 0xf) as usize];
+            buf[2 + i] = HEX[(v >> shift) & 0xf];
         }
         n = 2 + nibbles;
     }

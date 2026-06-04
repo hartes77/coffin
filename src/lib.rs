@@ -186,7 +186,7 @@ unsafe fn coffin_dealloc(ptr: *mut u8, layout: Layout) {
     let geom = region::region_geometry(layout);
     let arena = registry::registry();
     match arena.free(ptr as usize, geom.map_len) {
-        Some(true) => {}                  // fenced + quarantined
+        Some(true) => {} // fenced + quarantined
         Some(false) => report::raw_write(&[b"coffin: double free detected\n"]),
         None => System.dealloc(ptr, layout), // was a System-fallback allocation
     }

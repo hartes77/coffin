@@ -337,7 +337,8 @@ impl Arena {
             let victim = *self.ring.add(tail);
             self.evict(victim);
             *self.ring.add(tail) = idx;
-            self.q_tail.store((tail + 1) % self.q_cap, Ordering::Relaxed);
+            self.q_tail
+                .store((tail + 1) % self.q_cap, Ordering::Relaxed);
             // q_len stays == q_cap
         } else {
             let pos = (tail + len) % self.q_cap;
@@ -458,7 +459,11 @@ impl Arena {
         }
         // SAFETY: idx bounds-checked above.
         let slot = unsafe { self.slot(idx) };
-        let arr = if free { &slot.free_ips } else { &slot.alloc_ips };
+        let arr = if free {
+            &slot.free_ips
+        } else {
+            &slot.alloc_ips
+        };
         for (o, a) in out.iter_mut().zip(arr.iter()) {
             *o = a.load(Ordering::Relaxed);
         }
@@ -493,7 +498,8 @@ mod tests {
             assert!(cap.is_power_of_two());
             let slots =
                 unsafe { region::map_raw(cap * core::mem::size_of::<Region>()) } as *mut Region;
-            let ring = unsafe { region::map_raw(q_cap * core::mem::size_of::<usize>()) } as *mut usize;
+            let ring =
+                unsafe { region::map_raw(q_cap * core::mem::size_of::<usize>()) } as *mut usize;
             assert!(!slots.is_null() && !ring.is_null());
             Arena {
                 slots,
@@ -540,7 +546,10 @@ mod tests {
             assert!(unsafe { a.insert_key(0xA000 + i) }, "insert {i} should fit");
         }
         // Table is now full (16/16) -> the next insert fails (caller falls back).
-        assert!(!unsafe { a.insert_key(0xFFFF) }, "full table must reject insert");
+        assert!(
+            !unsafe { a.insert_key(0xFFFF) },
+            "full table must reject insert"
+        );
         for i in 0..16usize {
             assert_eq!(a.state_of(0xA000 + i), Some(READY));
         }

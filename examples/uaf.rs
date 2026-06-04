@@ -20,7 +20,10 @@ fn main() {
         let p = alloc(layout);
         assert!(!p.is_null());
         ptr::write_volatile(p, 1); // live: this is fine
-        eprintln!("coffin: allocated {p:p}, state = {:?}", coffin::slot_state(p));
+        eprintln!(
+            "coffin: allocated {p:p}, state = {:?}",
+            coffin::slot_state(p)
+        );
 
         dealloc(p, layout);
         eprintln!("coffin: freed {p:p}, state = {:?}", coffin::slot_state(p));

@@ -131,6 +131,9 @@ pub fn symbolize() -> bool {
             return false;
         }
         // SAFETY: getenv returned a valid C string.
-        matches!(unsafe { CStr::from_ptr(val) }.to_bytes(), b"1" | b"true" | b"yes")
+        matches!(
+            unsafe { CStr::from_ptr(val) }.to_bytes(),
+            b"1" | b"true" | b"yes"
+        )
     })
 }

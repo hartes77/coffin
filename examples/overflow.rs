@@ -18,8 +18,7 @@ fn main() {
     // A Vec<u8> of exactly N bytes (align 1, size N ⇒ size % align == 0 ⇒
     // byte-exact fence, zero padding). Its last byte sits flush against the
     // guard page.
-    let mut buf: Vec<u8> = Vec::with_capacity(N);
-    buf.resize(N, 0);
+    let mut buf: Vec<u8> = vec![0u8; N];
     let p = buf.as_mut_ptr();
 
     eprintln!(

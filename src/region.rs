@@ -102,59 +102,6 @@ pub fn geometry_for(size: usize, align: usize, mode: Mode, page: usize) -> Geome
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Iron rule #2: the user offset is ALWAYS a multiple of align, for every
-    // mode, page size, and (size, align) pair — including the pathological
-    // size % align != 0 case.
-    #[test]
-    fn alignment_is_always_respected() {
-        for &page in &[4096usize, 16384] {
-            for &align in &[1usize, 2, 4, 8, 16, 64, 4096] {
-                if align > page {
-                    continue;
-                }
-                for size in [1usize, 7, 8, 15, 16, 17, 64, 100, 4096, 4097, 40000] {
-                    for mode in [Mode::Above, Mode::Below] {
-                        let g = geometry_for(size, align, mode, page);
-                        assert_eq!(
-                            g.user_off % align,
-                            0,
-                            "user_off {} not aligned to {align} (size {size}, page {page}, {mode:?})",
-                            g.user_off
-                        );
-                        // Guard page is always whole-page aligned.
-                        assert_eq!(g.guard_off % page, 0);
-                        assert_eq!(g.map_len % page, 0);
-                    }
-                }
-            }
-        }
-    }
-
-    // Above mode: buffer end + poison padding lands exactly on the guard page,
-    // and padding is zero whenever size % align == 0 (i.e. all real types).
-    #[test]
-    fn above_mode_buffer_abuts_guard() {
-        for &page in &[4096usize, 16384] {
-            for &align in &[1usize, 8, 16, 64] {
-                for size in [1usize, 8, 16, 17, 64, 100, 4096, 40000] {
-                    let s = size.max(1);
-                    let g = geometry_for(size, align, Mode::Above, page);
-                    // buffer end + pad == guard offset
-                    assert_eq!(g.user_off + s + g.pad, g.guard_off);
-                    if s % align == 0 {
-                        assert_eq!(g.pad, 0, "expected zero padding for size {s} align {align}");
-                    }
-                    assert!(g.pad < align.max(1));
-                }
-            }
-        }
-    }
-}
-
 /// `mmap` a fresh fenced region and return `(base, user_ptr)`, or `(null, null)`
 /// on failure. The guard page is made `PROT_NONE`; Above-mode padding is poisoned.
 ///
@@ -175,7 +122,12 @@ pub unsafe fn map_region(layout: Layout, geom: &Geometry) -> (*mut u8, *mut u8) 
     let base = base as *mut u8;
 
     // Seal the guard page.
-    if libc::mprotect(base.add(geom.guard_off) as *mut c_void, page_size(), libc::PROT_NONE) != 0 {
+    if libc::mprotect(
+        base.add(geom.guard_off) as *mut c_void,
+        page_size(),
+        libc::PROT_NONE,
+    ) != 0
+    {
         libc::munmap(base as *mut c_void, geom.map_len);
         return (std::ptr::null_mut(), std::ptr::null_mut());
     }
@@ -250,4 +202,57 @@ pub unsafe fn protect_none(addr: *mut u8, len: usize) -> bool {
 /// `addr`/`len` must describe a region currently owned by Coffin.
 pub unsafe fn unmap(addr: *mut u8, len: usize) {
     libc::munmap(addr as *mut c_void, len);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Iron rule #2: the user offset is ALWAYS a multiple of align, for every
+    // mode, page size, and (size, align) pair — including the pathological
+    // size % align != 0 case.
+    #[test]
+    fn alignment_is_always_respected() {
+        for &page in &[4096usize, 16384] {
+            for &align in &[1usize, 2, 4, 8, 16, 64, 4096] {
+                if align > page {
+                    continue;
+                }
+                for size in [1usize, 7, 8, 15, 16, 17, 64, 100, 4096, 4097, 40000] {
+                    for mode in [Mode::Above, Mode::Below] {
+                        let g = geometry_for(size, align, mode, page);
+                        assert_eq!(
+                            g.user_off % align,
+                            0,
+                            "user_off {} not aligned to {align} (size {size}, page {page}, {mode:?})",
+                            g.user_off
+                        );
+                        // Guard page is always whole-page aligned.
+                        assert_eq!(g.guard_off % page, 0);
+                        assert_eq!(g.map_len % page, 0);
+                    }
+                }
+            }
+        }
+    }
+
+    // Above mode: buffer end + poison padding lands exactly on the guard page,
+    // and padding is zero whenever size % align == 0 (i.e. all real types).
+    #[test]
+    fn above_mode_buffer_abuts_guard() {
+        for &page in &[4096usize, 16384] {
+            for &align in &[1usize, 8, 16, 64] {
+                for size in [1usize, 8, 16, 17, 64, 100, 4096, 40000] {
+                    let s = size.max(1);
+                    let g = geometry_for(size, align, Mode::Above, page);
+                    // buffer end + pad == guard offset
+                    assert_eq!(g.user_off + s + g.pad, g.guard_off);
+                    if s % align == 0 {
+                        assert_eq!(g.pad, 0, "expected zero padding for size {s} align {align}");
+                    }
+                    assert!(g.pad < align.max(1));
+                }
+            }
+        }
+    }
 }
