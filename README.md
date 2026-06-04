@@ -99,6 +99,35 @@ All via environment variables, read once at startup:
   fault with a linear scan, and writes the report with raw `write(2)` — no heap,
   no locks. Symbolization is the one async-unsafe step and is strictly opt-in.
 
+## Why not AddressSanitizer?
+
+You probably should use [AddressSanitizer](https://github.com/google/sanitizers/wiki/addresssanitizer)
+when you can. **Coffin is not a replacement for ASan** — it's a different set of
+trade-offs that wins in a few specific situations.
+
+|                         | **Coffin**                                  | **AddressSanitizer**                          |
+|-------------------------|---------------------------------------------|-----------------------------------------------|
+| Toolchain               | **Stable Rust, drop-in `#[global_allocator]`** | Nightly (`-Zsanitizer=address`), recompile the world |
+| What it instruments     | Heap allocations only                       | Heap **+ stack + globals**, and reads/writes  |
+| Overflow precision      | **Exact byte** (hardware guard page)        | Redzone (caught, but not always the exact byte) |
+| Use-after-free          | ✅ (within quarantine window)               | ✅ (within quarantine window)                 |
+| Uninitialized reads     | ❌                                          | ❌ (that's MSan), but ASan catches more       |
+| Memory overhead         | **High** — ≥1 page per allocation           | Lower — shadow memory (~2x)                    |
+| Runs on a release build | ✅ just swap the allocator                  | Needs an instrumented rebuild of all deps     |
+| Code size / auditability| ~1k lines, 2 deps, readable in an afternoon | Large C++ runtime                              |
+
+**Reach for Coffin when** you want to drop a guard-page allocator into a
+canary/CI/staging build on **stable Rust without recompiling your dependencies**,
+and you want overflows to fault at the *exact* byte with a report that names the
+alloc and free sites.
+
+**Reach for ASan when** you can use nightly and rebuild, and you want broader
+coverage (stack, globals, intra-object overflows) at lower memory cost.
+
+**What Coffin does _not_ catch:** stack/global overflows, uninitialized reads,
+intra-object overflows, and reads/writes that stay within the allocation's own
+pages. It is heap-only and page-granular by design.
+
 ## ⚠️ This is a debugging tool, not a production allocator
 
 Coffin uses **at least one page per allocation** (4 KiB on Linux, **16 KiB on
