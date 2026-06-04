@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/hartes77/coffin/actions/workflows/ci.yml/badge.svg)](https://github.com/hartes77/coffin/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/coffin.svg)](https://crates.io/crates/coffin)
-[![docs.rs](https://img.shields.io/docsrs/coffin)](https://docs.rs/coffin)
+[![docs.rs](https://docs.rs/coffin/badge.svg)](https://docs.rs/coffin)
 [![license](https://img.shields.io/crates/l/coffin.svg)](#license)
 
 **A page-fencing global allocator for Rust that turns silent memory corruption
@@ -171,6 +171,41 @@ cargo run --example inspect   # non-crashing tour of the registry + quarantine
 COFFIN_SYMBOLIZE=1 cargo run --example uaf   # with demangled alloc/free stacks
 ```
 
+## Contributing
+
+Contributions are welcome — bug reports, real-world crash stories, platform
+testing, and PRs.
+
+**Before opening a PR, run the same gate CI does:**
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
+```
+
+CI runs this matrix on `ubuntu-latest` and `macos-latest`; both must stay green.
+
+**Design constraints to preserve.** Coffin is a debugging *allocator*, so some
+invariants are non-negotiable — please keep them intact (or flag explicitly if a
+change touches them):
+
+- **Alignment is sacred.** The returned pointer must always honor `layout.align()`.
+- **Page size is never hardcoded** — it is read once from `sysconf` and cached.
+- **The registry stays lock-free for readers**; only writers take the spinlock.
+- **The signal handler never allocates, never takes a blocking lock, and only
+  uses raw `write(2)`.** Symbolization is the sole opt-in, async-unsafe exception.
+
+If you find or fix a memory-corruption bug using Coffin, a short write-up in the
+issue tracker is hugely valuable — it helps others trust the tool.
+
+### License of contributions
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as below, without any additional terms or conditions.
+
 ## License
 
-MIT OR Apache-2.0
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option.
