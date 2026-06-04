@@ -1,0 +1,9 @@
+# Build artifacts
+/target
+
+# Backtraces / cores
+*.core
+
+# Editor / OS cruft
+*.swp
+.DS_Store

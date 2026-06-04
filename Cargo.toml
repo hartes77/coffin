@@ -1,0 +1,30 @@
+[package]
+name = "coffin"
+version = "0.1.0"
+edition = "2021"
+description = "A page-fencing global allocator that turns memory corruption into a deterministic SIGSEGV at the exact faulting address."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+libc = "0.2"
+# Declared now per the project constitution; first used in Phase 3 for raw-IP capture.
+backtrace = "0.3"
+
+[profile.release]
+# Keep frame pointers so Phase 3 backtraces stay sane.
+debug = true
+
+[[example]]
+name = "ok"
+
+[[example]]
+name = "overflow"
+
+[[example]]
+name = "uaf"
+
+[[example]]
+name = "inspect"
+
+[[example]]
+name = "wild"
